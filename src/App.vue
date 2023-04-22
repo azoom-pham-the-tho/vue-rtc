@@ -1,35 +1,6 @@
 <template>
   <div id="app">
-    <div class="center grid">
-      <vs-row class="nav">
-        <vs-col vs-type="flex" vs-justify="center" vs-align="center" w="12">
-          <NavBar />
-        </vs-col>
-      </vs-row>
-      <vs-row>
-        <vs-col
-          class="side"
-          vs-type="flex"
-          vs-justify="center"
-          vs-align="center"
-        >
-          <SideBar />
-        </vs-col>
-        <vs-col
-          class="content"
-          vs-type="flex"
-          vs-justify="center"
-          vs-align="center"
-        >
-          <router-view />
-        </vs-col>
-      </vs-row>
-      <vs-row class="footer">
-        <vs-col vs-type="flex" vs-justify="center" vs-align="center" w="12">
-          100%
-        </vs-col>
-      </vs-row>
-    </div>
+    <router-view />
   </div>
 </template>
 
@@ -70,16 +41,10 @@
 }
 </style>
 <script>
-import SideBar from "./views/SideBar.vue";
-import NavBar from "./views/NavBar.vue";
 export default {
   data: () => ({
     active: "guide",
   }),
-  components: {
-    SideBar,
-    NavBar,
-  },
 };
 </script>
 <style>

@@ -1,7 +1,9 @@
 import Vue from "vue";
 import VueRouter from "vue-router";
 import HomeView from "../views/HomeView.vue";
-
+import VideoLocal from "../views/VideoLocal.vue";
+import UserCall from "../views/UserCall.vue";
+import TestComponent from "../views/TestComponent.vue";
 Vue.use(VueRouter);
 
 const routes = [
@@ -11,12 +13,19 @@ const routes = [
     component: HomeView,
   },
   {
-    path: "/about",
-    name: "about",
-    // route level code-splitting
-    // this generates a separate chunk (about.[hash].js) for this route
-    // which is lazy-loaded when the route is visited.
-    component: () => import("../components/FormAction.vue"),
+    path: "/videoLocal/:id",
+    name: "videoLocal",
+    component: VideoLocal,
+  },
+  {
+    path: "/call/:id",
+    name: "userCall",
+    component: UserCall,
+  },
+  {
+    path: "/test",
+    name: "TestComponent",
+    component: TestComponent,
   },
 ];
 

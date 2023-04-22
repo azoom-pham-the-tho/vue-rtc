@@ -1,26 +1,45 @@
 <template>
-  <div class="home">
-    <p>content</p>
-    <video
-      class="local-video"
-      id="local"
-      volume="0"
-      autoplay
-      muted
-      width="720px"
-      height="480px"
-      v-if="myStream"
-      :srcObject.prop="myStream"
-    ></video>
+  <div class="">
+    <div class="localVideo">
+      <p>video local</p>
+      <video
+        class="local-video"
+        id="local"
+        volume="0"
+        autoplay
+        muted
+        width="720px"
+        height="480px"
+        v-if="myStreamSrc"
+        :srcObject.prop="myStreamSrc"
+      ></video>
+      <button @click="ChangeVideo">change video</button>
+    </div>
+    <h1>video Other</h1>
+    <div class="otherVideo">
+      <video
+        v-for="(item, index) in listVideo"
+        class="other-video"
+        id="local"
+        volume="0"
+        autoplay
+        muted
+        width="480px"
+        height="320px"
+        :key="index"
+        :srcObject.prop="item"
+      ></video>
+    </div>
   </div>
 </template>
 <script>
-import { io } from "socket.io-client";
 import helper from "@/helper/socket";
+import { io } from "socket.io-client";
 export default {
-  name: "HomeView",
+  name: "VideoLocal",
   data() {
     return {
+      myStreamSrc: "",
       roomId: "",
       socketId: "",
       myStream: "",
@@ -28,34 +47,33 @@ export default {
       mediaRecorder: "",
       pc: [],
       socketClient: "",
+      listVideo: [],
     };
   },
   mounted() {
     this.roomId = this.$route.params.id;
-    console.log(this.roomId);
-    let socket = io("http://localhost:4001/stream");
-    this.socketClient = socket;
     helper
       .getUserFullMedia()
       .then((stream) => {
         //save my stream
+        console.log(stream);
         this.myStream = stream;
-
-        helper.setLocalStream(stream);
+        this.myStreamSrc = stream;
+        // this.otherStreamSrc = stream;
       })
       .catch((e) => {
         console.error(`stream error: ${e}`);
       });
-    socket.on("connect", () => {
+    this.socketClient = io("http://localhost:4001/stream");
+    this.socketClient.on("connect", () => {
       //set socketId
-      this.socketId = socket.io.engine.id;
-      socket.emit("subscribe", {
+      this.socketId = this.socketClient.io.engine.id;
+      this.socketClient.emit("subscribe", {
         room: this.roomId,
         socketId: this.socketId,
       });
-      socket.on("new user", (data) => {
-        console.log("on new user", data?.socketId, this.socketId);
-        socket.emit("newUserStart", {
+      this.socketClient.on("new user", (data) => {
+        this.socketClient.emit("newUserStart", {
           to: data.socketId,
           sender: this.socketId,
         });
@@ -63,12 +81,12 @@ export default {
         this.init(true, data.socketId);
         console.log("pc new user", this.pc);
       });
-      socket.on("newUserStart", (data) => {
+      this.socketClient.on("newUserStart", (data) => {
         this.pc.push(data.sender);
         console.log("newUserStart sender", data.sender);
         this.init(false, data.sender);
       });
-      socket.on("ice candidates", async (data) => {
+      this.socketClient.on("ice candidates", async (data) => {
         data.candidate
           ? await this.pc[data.sender].addIceCandidate(
               new RTCIceCandidate(data.candidate)
@@ -76,8 +94,12 @@ export default {
           : "";
       });
 
-      socket.on("sdp", async (data) => {
+      this.socketClient.on("sdp", async (data) => {
+        console.log(data);
+        console.log(this.pc);
         if (data.description.type === "offer") {
+          console.log(data.description);
+
           data.description
             ? await this.pc[data.sender].setRemoteDescription(
                 new RTCSessionDescription(data.description)
@@ -88,7 +110,7 @@ export default {
             .getUserFullMedia()
             .then(async (stream) => {
               if (!document.getElementById("local").srcObject) {
-                helper.setLocalStream(stream);
+                this.myStreamSrc = stream;
               }
 
               //save my stream
@@ -104,7 +126,7 @@ export default {
 
               console.log("pc sdp ", this.pc);
 
-              socket.emit("sdp", {
+              this.socketClient.emit("sdp", {
                 description: this.pc[data.sender].localDescription,
                 to: data.sender,
                 sender: this.socketId,
@@ -127,11 +149,11 @@ export default {
 
       if (this.screen && this.screen.getTracks().length) {
         this.screen.getTracks().forEach((track) => {
-          this.pc[partnerName].addTrack(track, screen); //should trigger negotiationneeded event
+          this.pc[partnerName].addTrack(track, screen);
         });
       } else if (this.myStream) {
         this.myStream.getTracks().forEach((track) => {
-          this.pc[partnerName].addTrack(track, this.myStream); //should trigger negotiationneeded event
+          this.pc[partnerName].addTrack(track, this.myStream);
         });
       } else {
         helper
@@ -141,10 +163,10 @@ export default {
             this.myStream = stream;
 
             stream.getTracks().forEach((track) => {
-              this.pc[partnerName].addTrack(track, stream); //should trigger negotiationneeded event
+              this.pc[partnerName].addTrack(track, stream);
             });
 
-            helper.setLocalStream(stream);
+            this.myStreamSrc = stream;
           })
           .catch((e) => {
             console.error(`stream error: ${e}`);
@@ -161,7 +183,7 @@ export default {
           this.socketClient.emit("sdp", {
             description: this.pc[partnerName].localDescription,
             to: partnerName,
-            sender: this.socketIdsocketId,
+            sender: this.socketId,
           });
         };
       }
@@ -177,40 +199,20 @@ export default {
       console.log("pc init", this.pc);
       this.pc[partnerName].ontrack = (e) => {
         let str = e.streams[0];
-        console.log(str);
-        if (document.getElementById(`${partnerName}-video`)) {
-          // document.getElementById(`${partnerName}-video`).srcObject = str;
-        } else {
-          //video elem
-          // let newVid = document.createElement("video");
-          // newVid.id = `${partnerName}-video`;
-          // newVid.srcObject = str;
-          // newVid.autoplay = true;
-          // newVid.className = "remote-video";
-          // //video controls elements
-          // let controlDiv = document.createElement("div");
-          // controlDiv.className = "remote-video-controls";
-          // controlDiv.innerHTML = `<i class="fa fa-microphone text-white pr-3 mute-remote-mic" title="Mute"></i>
-          //               <i class="fa fa-expand text-white expand-remote-video" title="Expand"></i>`;
-          // //create a new div for card
-          // let cardDiv = document.createElement("div");
-          // cardDiv.className = "card card-sm";
-          // cardDiv.id = partnerName;
-          // cardDiv.appendChild(newVid);
-          // cardDiv.appendChild(controlDiv);
-          // //put div in main-section elem
-          // document.getElementById("videos").appendChild(cardDiv);
-          // helper.adjustVideoElemSize();
-        }
+        this.listVideo.push(str);
+        console.log("list video has join", this.listVideo);
       };
+
       this.pc[partnerName].onconnectionstatechange = () => {
         switch (this.pc[partnerName].iceConnectionState) {
           case "disconnected":
           case "failed":
             // helper.closeVideo(partnerName);
+            console.log(this.pc[partnerName]);
             break;
 
           case "closed":
+            console.log(this.pc[partnerName]);
             // helper.closeVideo(partnerName);
             break;
         }
@@ -221,12 +223,50 @@ export default {
           case "closed":
             console.log("Signalling state is 'closed'");
             // helper.closeVideo(partnerName);
+
             break;
         }
       };
+    },
+    ChangeVideo() {
+      console.log(this.myStream);
+      if (this.myStream.getVideoTracks()[0].enabled) {
+        this.myStream.getVideoTracks()[0].enabled = false;
+      } else {
+        this.myStream.getVideoTracks()[0].enabled = true;
+      }
+      let track = this.myStream.getVideoTracks()[0];
+      console.log(track);
+      for (let p in this.pc) {
+        let pName = this.pc[p];
+        if (typeof this.pc[pName] == "object") {
+          let sender = pName.getSenders
+            ? pName
+                .getSenders()
+                .find((s) => s.track && s.track.kind === track.kind)
+            : false;
+          sender ? sender.replaceTrack(track) : "";
+        }
+      }
     },
   },
 };
 </script>
 
-<style scoped></style>
+<style scoped>
+.localVideo {
+  background-color: black;
+}
+.localVideo p {
+  color: white;
+  font-size: 24px;
+}
+.otherVideo p {
+  color: black;
+  font-size: 24px;
+}
+.otherVideo {
+  display: flex;
+  justify-content: center;
+}
+</style>
