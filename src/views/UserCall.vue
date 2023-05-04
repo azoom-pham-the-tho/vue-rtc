@@ -67,115 +67,142 @@
   </div>
 </template>
 <script>
-import { Peer } from "peerjs";
-import rtcHelper from "../helper/rtc";
-import { io } from "socket.io-client";
+import io from "socket.io-client";
+import Peer from "skyway-js";
 export default {
   name: "VideoLocal",
   data() {
     return {
-      peer: new Peer(),
+      peer: {},
       peerId: "",
       roomId: "",
+      room: "",
+      socket: "",
       myStream: "",
       otherStream: "",
-      screen: "",
-      listVideo: [],
+      streamTemp: {},
+      peers: [],
+      screenShare: {},
+      audios: [],
       optionMedia: {
         cam: true, //{ width: 720, height: 480 },
-        mic: true,
+        mic: false,
         share: false,
       },
     };
   },
   mounted() {
     this.roomId = this.$route.params.id;
-    this.socket = io("http://94.237.79.161:2000");
-
-    rtcHelper
-      .getUserFullMedia(this.optionMedia)
-      .then((stream) => {
-        this.myStream = stream;
-        this.peer.on("call", (call) => {
-          call.answer(stream);
-          call.on("stream", (userStream) => {
-            console.log(userStream);
-            this.otherStream = userStream;
-          });
-          call.on("error", (err) => {
-            alert(err);
-          });
-          call.on("close", () => {
-            this.myStream.close();
-            console.log("close");
-          });
+    const uri = "http://localhost:8001";
+    const token = sessionStorage.getItem("auth");
+    if (!token) return this.$router.push("login");
+    this.socket = io(uri, {
+      extraHeaders: {
+        authorization: `Beaer ${token}`,
+      },
+    });
+    this.peer = new Peer(this.name, {
+      key: "c6cd73b9-f4df-4111-8844-e78ecaa57a7f",
+      debug: 3,
+    });
+    this.peer.on("open", (peerId) => {
+      this.peerId = peerId;
+      navigator.mediaDevices
+        .getUserMedia({
+          video: this.optionMedia.cam,
+          audio: this.optionMedia.mic,
+        })
+        .then((stream) => {
+          this.myStream = stream;
+        })
+        .then(this.joinRoom)
+        .catch((err) => {
+          console.log(err);
+          // alert(`Error: Your device cannot use this type of stream.`);
         });
-      })
-      .catch((err) => {
-        alert(err.message);
-      });
+    });
 
-    this.peer.on("open", (id) => {
-      this.peerId = id;
-      this.socket.emit("newUser", id, this.roomId);
-    });
-    this.peer.on("error", (err) => {
-      alert(err.type);
-    });
-    this.socket.on("userJoined", (id) => {
-      console.log("new user joined");
-      const call = this.peer.call(id, this.myStream);
-      call.on("error", (err) => {
-        alert(err);
-      });
-      call.on("stream", (userStream) => {
-        this.otherStream = userStream;
-      });
-      call.on("close", () => {
-        this.otherStream.close();
-        console.log("user disconect");
-      });
+    this.socket.on("end-call", () => {
+      this.myStream.getTracks().forEach((track) => track.stop());
+      this.$router.push("/");
     });
   },
   methods: {
+    joinRoom() {
+      const peer = this.peer;
+      if (this.room) {
+        this.room.replaceStream(this.localStream);
+        return;
+      }
+      this.room = peer.joinRoom(this.roomId, {
+        mode: "mesh",
+        stream: this.myStream,
+      });
+
+      this.room.once("open", () => {
+        console.log("=== You joined ===\n");
+      });
+      this.room.on("peerJoin", (peerId) => {
+        console.log(`=== ${peerId} joined ===\n`);
+      });
+
+      this.room.on("peerLeave", (peerId) => {
+        this.peers = this.peers.filter((p) => p.peerId !== peerId);
+      });
+
+      this.room.on("stream", async (stream) => {
+        console.log("stream", stream);
+        this.peers = this.peers.filter((p) => p.peerId !== stream.peerId);
+        this.peers.push({ peerId: stream.peerId, stream: stream });
+        this.otherStream = stream;
+      });
+    },
+    destroyed() {
+      if (this.room) this.room.close();
+      if (this.peer) this.peer.destroy();
+    },
     changeMic() {
       this.optionMedia.mic = !this.optionMedia.mic;
       this.myStream.getAudioTracks()[0].enabled = this.optionMedia.mic;
+      return true;
     },
     changeCam() {
       this.optionMedia.cam = !this.optionMedia.cam;
       this.myStream.getVideoTracks()[0].enabled = this.optionMedia.cam;
+      this.room.replaceStream(this.myStream);
+      return true;
     },
     shareScreen() {
-      rtcHelper.getScreenMedia().then((streamScreen) => {
-        this.optionMedia.share = !this.optionMedia.share;
-        this.screen = streamScreen;
-        this.myStream = streamScreen;
-
-        const screenTrack = streamScreen.getVideoTracks()[0];
-        console.log("screenTrack", screenTrack);
-        const call = this.peer.call(this.peerId, this.myStream);
-        const senders = call.peerConnection.getSenders();
-        console.log("senders", senders);
-        const videoSender = senders.find(
-          (sender) => sender.track.kind === "video"
-        );
-        console.log(videoSender);
-        videoSender.replaceTrack(screenTrack);
-        streamScreen.getVideoTracks()[0].onended = () => {
-          //listen when click stop share on browser
-          this.stopSharingScreen();
-        };
-      });
+      navigator.mediaDevices
+        .getDisplayMedia({
+          video: {
+            cursor: "always",
+            frameRate: 30,
+          },
+        })
+        .then((streamScreen) => {
+          this.optionMedia.share = !this.optionMedia.share;
+          this.streamTemp = this.myStream;
+          this.myStream = streamScreen;
+          this.room.replaceStream(streamScreen);
+          streamScreen.getVideoTracks()[0].onended = () => {
+            //listen when click stop share on browser
+            this.stopSharingScreen();
+          };
+        });
+      return true;
     },
     stopSharingScreen() {
-      const getTracks = this.screen.getTracks();
-      //close video track
-      getTracks.length ? getTracks.forEach(async (track) => track.stop()) : "";
-      this.optionMedia.share = !this.optionMedia.share;
+      console.log("end share");
+      this.room.replaceStream(this.streamTemp);
+      this.myStream = this.streamTemp;
     },
     onClose() {
-      this.myStream.close();
+      this.socket.emit("end-call", this.roomId);
+      if (this.room) this.room.close();
+      if (this.peer) this.peer.destroy();
+      this.myStream.getTracks().forEach((track) => track.stop());
+      this.$router.push("/");
     },
   },
 };

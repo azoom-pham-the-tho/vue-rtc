@@ -1,232 +1,170 @@
 <template>
-  <div class="home">
-    <p>content</p>
-    <video
-      class="local-video"
-      id="local"
-      volume="0"
-      autoplay
-      muted
-      width="720px"
-      height="480px"
-      v-if="myStream"
-      :srcObject.prop="myStream"
-    ></video>
+  <div class="home-page">
+    <div class="content">
+      <div class="sidebar">
+        <div class="user">
+          <div
+            :class="['item', getClassNameWithStatus(item.status)]"
+            v-for="(item, index) in listUser"
+            :key="index"
+            @click="call(item._id, item.status, item.name)"
+          >
+            {{ item.name }}
+            <span v-if="item._id == currentUser.id">(me)</span>
+          </div>
+        </div>
+        <div class="chat">
+          <div class="item">chat mot</div>
+        </div>
+      </div>
+      <div class="message"></div>
+    </div>
+
+    <v-dialog class="dialog" v-model="dialog" width="500">
+      <h4>
+        <b class="name"> {{ contentDialog }}</b>
+      </h4>
+      <div class="action">
+        <v-btn
+          v-if="userCall.id"
+          class="btn"
+          color="primary"
+          @click="acceptJoin"
+        >
+          <span class="material-symbols-outlined"> phone_in_talk </span>
+        </v-btn>
+        <v-btn class="btn" color="pink" @click="rejectJoin">
+          <span class="material-symbols-outlined"> phone_disabled </span>
+        </v-btn>
+      </div>
+    </v-dialog>
   </div>
 </template>
 <script>
-import { io } from "socket.io-client";
-import helper from "@/helper/socket";
+import io from "socket.io-client";
 export default {
-  name: "HomeView",
   data() {
     return {
-      roomId: "",
-      socketId: "",
-      myStream: "",
-      recordedStream: "",
-      mediaRecorder: "",
-      pc: [],
-      socketClient: "",
+      dialog: false,
+      contentDialog: "",
+      userCall: {
+        // nhận khi có người gọi đến
+        id: "",
+        name: "",
+        roomId: "",
+      },
+      callToUser: "",
+      currentUser: {},
+      listUser: [],
+      socket: null,
     };
   },
+
   mounted() {
-    this.roomId = this.$route.params.id;
-    console.log(this.roomId);
-    let socket = io("http://localhost:4001/stream");
-    this.socketClient = socket;
-    helper
-      .getUserFullMedia()
-      .then((stream) => {
-        //save my stream
-        this.myStream = stream;
-
-        helper.setLocalStream(stream);
-      })
-      .catch((e) => {
-        console.error(`stream error: ${e}`);
+    const uri = "http://localhost:8001";
+    const token = sessionStorage.getItem("auth");
+    this.currentUser = JSON.parse(sessionStorage.getItem("user"));
+    console.log(this.currentUser);
+    if (!token) return this.$router.push("login");
+    this.socket = io(uri, {
+      extraHeaders: {
+        authorization: `Beaer ${token}`,
+      },
+    });
+    this.socket.on("connect", () => {
+      this.socket.emit("get-all-user");
+      this.socket.on("disconnect", () => {
+        console.log("user disconnected");
       });
-    socket.on("connect", () => {
-      //set socketId
-      this.socketId = socket.io.engine.id;
-      socket.emit("subscribe", {
-        room: this.roomId,
-        socketId: this.socketId,
-      });
-      socket.on("new user", (data) => {
-        console.log("on new user", data?.socketId, this.socketId);
-        socket.emit("newUserStart", {
-          to: data.socketId,
-          sender: this.socketId,
-        });
-        this.pc.push(data.socketId);
-        this.init(true, data.socketId);
-        console.log("pc new user", this.pc);
-      });
-      socket.on("newUserStart", (data) => {
-        this.pc.push(data.sender);
-        console.log("newUserStart sender", data.sender);
-        this.init(false, data.sender);
-      });
-      socket.on("ice candidates", async (data) => {
-        data.candidate
-          ? await this.pc[data.sender].addIceCandidate(
-              new RTCIceCandidate(data.candidate)
-            )
-          : "";
-      });
-
-      socket.on("sdp", async (data) => {
-        if (data.description.type === "offer") {
-          data.description
-            ? await this.pc[data.sender].setRemoteDescription(
-                new RTCSessionDescription(data.description)
-              )
-            : "";
-
-          helper
-            .getUserFullMedia()
-            .then(async (stream) => {
-              if (!document.getElementById("local").srcObject) {
-                helper.setLocalStream(stream);
-              }
-
-              //save my stream
-              this.myStream = stream;
-
-              stream.getTracks().forEach((track) => {
-                this.pc[data.sender].addTrack(track, stream);
-              });
-
-              let answer = await this.pc[data.sender].createAnswer();
-
-              await this.pc[data.sender].setLocalDescription(answer);
-
-              console.log("pc sdp ", this.pc);
-
-              socket.emit("sdp", {
-                description: this.pc[data.sender].localDescription,
-                to: data.sender,
-                sender: this.socketId,
-              });
-            })
-            .catch((e) => {
-              console.error(e);
-            });
-        } else if (data.description.type === "answer") {
-          await this.pc[data.sender].setRemoteDescription(
-            new RTCSessionDescription(data.description)
-          );
-        }
-      });
+    });
+    this.socket.on("get-all-user", (listUser) => {
+      this.listUser = listUser;
+    });
+    this.socket.on("user-call", (userCall, roomId) => {
+      this.userCall.name = userCall.name;
+      this.userCall.id = userCall.id;
+      this.userCall.roomId = roomId;
+      this.contentDialog = this.userCall.name + " đang gọi cho bạn";
+      this.dialog = true;
+    });
+    this.socket.on("accept-join", (roomId) => {
+      console.log("accept-join");
+      this.$router.push(`/call/${roomId}`);
+    });
+    this.socket.on("reject-join", () => {
+      this.dialog = false;
     });
   },
   methods: {
-    init(createOffer, partnerName) {
-      this.pc[partnerName] = new RTCPeerConnection(helper.getIceServer());
-
-      if (this.screen && this.screen.getTracks().length) {
-        this.screen.getTracks().forEach((track) => {
-          this.pc[partnerName].addTrack(track, screen); //should trigger negotiationneeded event
-        });
-      } else if (this.myStream) {
-        this.myStream.getTracks().forEach((track) => {
-          this.pc[partnerName].addTrack(track, this.myStream); //should trigger negotiationneeded event
-        });
+    call(userId, status, name) {
+      console.log(userId, status);
+      if (status == 2) {
+        this.dialog = true;
+        this.contentDialog = "bạn  đang gọi cho " + name;
+        this.callToUser = userId;
+        this.socket.emit("user-call", userId);
       } else {
-        helper
-          .getUserFullMedia()
-          .then((stream) => {
-            //save my stream
-            this.myStream = stream;
-
-            stream.getTracks().forEach((track) => {
-              this.pc[partnerName].addTrack(track, stream); //should trigger negotiationneeded event
-            });
-
-            helper.setLocalStream(stream);
-          })
-          .catch((e) => {
-            console.error(`stream error: ${e}`);
-          });
+        alert("user offline");
       }
-
-      //create offer
-      if (createOffer) {
-        this.pc[partnerName].onnegotiationneeded = async () => {
-          let offer = await this.pc[partnerName].createOffer();
-
-          await this.pc[partnerName].setLocalDescription(offer);
-
-          this.socketClient.emit("sdp", {
-            description: this.pc[partnerName].localDescription,
-            to: partnerName,
-            sender: this.socketIdsocketId,
-          });
-        };
+    },
+    acceptJoin() {
+      this.$router.push(`/call/${this.userCall.roomId}`);
+      this.socket.emit("accept-join", {
+        userHost: this.userCall.id,
+        roomId: this.userCall.roomId,
+      });
+    },
+    rejectJoin() {
+      this.dialog = false;
+      this.socket.emit("reject-join", this.callToUser);
+    },
+    getClassNameWithStatus(status) {
+      switch (status) {
+        case 1:
+          return "-offline";
+        case 2:
+          return "-online";
+        case 3:
+          return "-call";
+        default:
+          return "";
       }
-
-      //send ice candidate to partnerNames
-      this.pc[partnerName].onicecandidate = ({ candidate }) => {
-        this.socketClient.emit("ice candidates", {
-          candidate: candidate,
-          to: partnerName,
-          sender: this.socketId,
-        });
-      };
-      console.log("pc init", this.pc);
-      this.pc[partnerName].ontrack = (e) => {
-        let str = e.streams[0];
-        console.log(str);
-        if (document.getElementById(`${partnerName}-video`)) {
-          // document.getElementById(`${partnerName}-video`).srcObject = str;
-        } else {
-          //video elem
-          // let newVid = document.createElement("video");
-          // newVid.id = `${partnerName}-video`;
-          // newVid.srcObject = str;
-          // newVid.autoplay = true;
-          // newVid.className = "remote-video";
-          // //video controls elements
-          // let controlDiv = document.createElement("div");
-          // controlDiv.className = "remote-video-controls";
-          // controlDiv.innerHTML = `<i class="fa fa-microphone text-white pr-3 mute-remote-mic" title="Mute"></i>
-          //               <i class="fa fa-expand text-white expand-remote-video" title="Expand"></i>`;
-          // //create a new div for card
-          // let cardDiv = document.createElement("div");
-          // cardDiv.className = "card card-sm";
-          // cardDiv.id = partnerName;
-          // cardDiv.appendChild(newVid);
-          // cardDiv.appendChild(controlDiv);
-          // //put div in main-section elem
-          // document.getElementById("videos").appendChild(cardDiv);
-          // helper.adjustVideoElemSize();
-        }
-      };
-      this.pc[partnerName].onconnectionstatechange = () => {
-        switch (this.pc[partnerName].iceConnectionState) {
-          case "disconnected":
-          case "failed":
-            // helper.closeVideo(partnerName);
-            break;
-
-          case "closed":
-            // helper.closeVideo(partnerName);
-            break;
-        }
-      };
-
-      this.pc[partnerName].onsignalingstatechange = () => {
-        switch (this.pc[partnerName].signalingState) {
-          case "closed":
-            console.log("Signalling state is 'closed'");
-            // helper.closeVideo(partnerName);
-            break;
-        }
-      };
     },
   },
 };
 </script>
-
-<style scoped></style>
+<style scoped>
+.home-page > .content {
+  display: flex;
+  width: 100%;
+  padding: 50px 50px;
+}
+.home-page > .content > .sidebar {
+  width: 25%;
+  display: flex;
+  flex-direction: column;
+}
+.home-page > .content > .message {
+  width: 75%;
+  background-color: aquamarine;
+}
+.home-page > .content > .sidebar > .user {
+  border-bottom: 2px solid;
+  border-top: 2px solid;
+  max-height: 200px;
+  overflow-y: scroll;
+}
+.home-page > .content > .sidebar > .user > .item {
+  padding: 5px 5px;
+  cursor: pointer;
+}
+.-online {
+  background-color: rgba(96, 255, 91, 0.2);
+}
+.-offline {
+  background-color: rgba(255, 91, 91, 0.2);
+}
+.-call {
+  background-color: rgba(250, 255, 91, 0.2);
+}
+</style>

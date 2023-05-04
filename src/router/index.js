@@ -1,9 +1,9 @@
 import Vue from "vue";
 import VueRouter from "vue-router";
 import HomeView from "../views/HomeView.vue";
-import VideoLocal from "../views/VideoLocal.vue";
 import UserCall from "../views/UserCall.vue";
-import TestComponent from "../views/TestComponent.vue";
+import LoginPage from "../views/LoginPage.vue";
+import RegisterPage from "../views/RegisterPage.vue";
 Vue.use(VueRouter);
 
 const routes = [
@@ -13,19 +13,19 @@ const routes = [
     component: HomeView,
   },
   {
-    path: "/videoLocal/:id",
-    name: "videoLocal",
-    component: VideoLocal,
+    path: "/login",
+    name: "login",
+    component: LoginPage,
+  },
+  {
+    path: "/register",
+    name: "register",
+    component: RegisterPage,
   },
   {
     path: "/call/:id",
     name: "userCall",
     component: UserCall,
-  },
-  {
-    path: "/test",
-    name: "TestComponent",
-    component: TestComponent,
   },
 ];
 
