@@ -67,6 +67,7 @@ export default {
     console.log(this.currentUser);
     if (!token) return this.$router.push("login");
     this.socket = io(uri, {
+      path: "/call",
       extraHeaders: {
         authorization: `Beaer ${token}`,
       },

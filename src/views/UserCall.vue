@@ -75,15 +75,14 @@ export default {
     return {
       peer: {},
       peerId: "",
-      roomId: "",
-      room: "",
+      roomId: "", // room id
+      room: "", // room of skyway
       socket: "",
       myStream: "",
       otherStream: "",
-      streamTemp: {},
-      peers: [],
+      streamTemp: {}, // temp when share screen
+      peers: [], // list peer connect
       screenShare: {},
-      audios: [],
       optionMedia: {
         cam: true, //{ width: 720, height: 480 },
         mic: false,
