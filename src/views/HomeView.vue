@@ -14,13 +14,91 @@
           </div>
         </div>
         <div class="chat">
-          <div class="item">chat mot</div>
+          <div
+            :class="[
+              'item',
+              item.read?.includes(currentUser.id) && 'notiGroup',
+            ]"
+            v-for="(item, index) in groupChat"
+            :key="index"
+            @click="getMessageInGroup(item._id, item.name, item.members)"
+          >
+            <p class="groupName">
+              {{ item.name }}
+            </p>
+            <div class="subMessage">
+              <span>
+                {{ item.messages[0].name }}
+              </span>
+              : &nbsp;
+              <span class="message">
+                {{ item.messages[0].content }}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="message"></div>
+      <div class="message">
+        <div class="header" v-if="groupCurrent">
+          <p class="groupName">
+            {{ groupCurrent.groupName }}
+            <span class="usersGroup">
+              <v-tooltip bottom>
+                <template v-slot:activator="{ on, attrs }">
+                  <span v-bind="attrs" v-on="on"
+                    >{{ groupCurrent.members.length }} users</span
+                  >
+                </template>
+                <div
+                  class="item"
+                  v-for="(item, index) in groupCurrent.members"
+                  :key="index"
+                  @click="call(item._id, item.status, item.name)"
+                >
+                  {{ item.name }}
+                  <span v-if="item._id == currentUser.id">(me)</span>
+                </div>
+              </v-tooltip>
+            </span>
+          </p>
+
+          <div class="action">
+            <span
+              class="material-symbols-outlined"
+              @click="() => (dialogGroup = true)"
+            >
+              group_add
+            </span>
+            <span class="material-symbols-outlined"> videocam </span>
+          </div>
+        </div>
+        <div class="contentMessage">
+          <div class="item" v-for="(item, index) in messageChat" :key="index">
+            <div :class="item.userId == currentUser.id ? 'right' : 'left'">
+              <p class="user" v-if="item.userId != currentUser.id">
+                {{ item.name }} &nbsp;
+              </p>
+              <p class="content">{{ item.content }}</p>
+            </div>
+          </div>
+        </div>
+        <div class="inputChat" v-if="groupCurrent">
+          <v-text-field
+            v-model="message"
+            append-outer-icon="mdi-send"
+            filled
+            clear-icon="mdi-close-circle"
+            clearable
+            @click:append-outer="sendMessage"
+            @keydown.enter.prevent="sendMessage"
+            hide-details="auto"
+            type="text"
+          ></v-text-field>
+        </div>
+      </div>
     </div>
 
-    <v-dialog class="dialog" v-model="dialog" width="500">
+    <v-dialog class="dialog call" v-model="dialogCall" width="500">
       <h4>
         <b class="name"> {{ contentDialog }}</b>
       </h4>
@@ -38,6 +116,33 @@
         </v-btn>
       </div>
     </v-dialog>
+    <v-dialog class="dialog add-user-group" v-model="dialogGroup" width="500">
+      <h4>
+        <b class="name">Add user to {{ groupCurrent.groupName }}</b>
+      </h4>
+      <v-container fluid>
+        <v-row align="center">
+          <v-col>
+            <v-select
+              v-model="userSelectInGroup"
+              :items="listUser"
+              item-text="name"
+              item-value="_id"
+              chips
+              label="Chips"
+              multiple
+              solo
+              full-width
+            ></v-select>
+          </v-col>
+        </v-row>
+      </v-container>
+      <div class="action">
+        <v-btn class="btn" color="primary" @click="submitAddUser">
+          <span class="material-symbols-outlined"> done </span>
+        </v-btn>
+      </div>
+    </v-dialog>
   </div>
 </template>
 <script>
@@ -45,7 +150,8 @@ import io from "socket.io-client";
 export default {
   data() {
     return {
-      dialog: false,
+      dialogCall: false,
+      dialogGroup: false,
       contentDialog: "",
       userCall: {
         // nhận khi có người gọi đến
@@ -54,9 +160,16 @@ export default {
         roomId: "",
       },
       callToUser: "",
-      currentUser: {},
       listUser: [],
-      socket: null,
+      socketCall: null,
+      socketChat: null,
+      currentUser: {},
+      groupChat: [],
+      userSelectInGroup: [],
+      groupCurrent: "",
+      chatName: "",
+      messageChat: [],
+      message: "",
     };
   },
 
@@ -64,60 +177,87 @@ export default {
     const uri = "http://localhost:8001";
     const token = sessionStorage.getItem("auth");
     this.currentUser = JSON.parse(sessionStorage.getItem("user"));
-    console.log(this.currentUser);
     if (!token) return this.$router.push("login");
-    this.socket = io(uri, {
-      path: "/call",
-      extraHeaders: {
-        authorization: `Beaer ${token}`,
-      },
-    });
-    this.socket.on("connect", () => {
-      this.socket.emit("get-all-user");
-      this.socket.on("disconnect", () => {
-        console.log("user disconnected");
-      });
-    });
-    this.socket.on("get-all-user", (listUser) => {
-      this.listUser = listUser;
-    });
-    this.socket.on("user-call", (userCall, roomId) => {
-      this.userCall.name = userCall.name;
-      this.userCall.id = userCall.id;
-      this.userCall.roomId = roomId;
-      this.contentDialog = this.userCall.name + " đang gọi cho bạn";
-      this.dialog = true;
-    });
-    this.socket.on("accept-join", (roomId) => {
-      console.log("accept-join");
-      this.$router.push(`/call/${roomId}`);
-    });
-    this.socket.on("reject-join", () => {
-      this.dialog = false;
-    });
+    this.handleSocketCall(uri, token);
+    this.handleSocketChat(uri, token);
   },
   methods: {
+    handleSocketCall(uri, token) {
+      this.socketCall = io(uri, {
+        path: "/call",
+        extraHeaders: {
+          authorization: `Beaer ${token}`,
+        },
+      });
+      this.socketCall.on("connect", () => {
+        this.socketCall.emit("get-all-user");
+        this.socketCall.on("disconnect", () => {
+          console.log("user disconnected");
+        });
+      });
+      this.socketCall.on("get-all-user", (listUser) => {
+        this.listUser = listUser;
+      });
+      this.socketCall.on("user-call", (userCall, roomId) => {
+        this.userCall.name = userCall.name;
+        this.userCall.id = userCall.id;
+        this.userCall.roomId = roomId;
+        this.contentDialog = this.userCall.name + " đang gọi cho bạn";
+        this.dialog = true;
+      });
+      this.socketCall.on("accept-join", (roomId) => {
+        console.log("accept-join");
+        this.$router.push(`/call/${roomId}`);
+      });
+      this.socketCall.on("reject-join", () => {
+        this.dialog = false;
+      });
+    },
+    handleSocketChat(uri, token) {
+      this.socketChat = io(uri, {
+        path: "/chat",
+        extraHeaders: {
+          authorization: `Beaer ${token}`,
+        },
+      });
+      this.socketCall.on("connect", () => {
+        this.socketChat.emit("group-chat");
+      });
+      this.socketChat.on("group-chat", (groupChat) => {
+        this.groupChat = groupChat;
+      });
+      this.socketChat.on("message-in-group", (messageChat) => {
+        this.messageChat = messageChat ? messageChat.messages.reverse() : [];
+        var container = this.$el.querySelector(".contentMessage");
+        container.scrollBottom = container.scrollHeight;
+      });
+      this.socketChat.on("chat", () => {
+        this.socketChat.emit("message-in-group", {
+          groupId: this.groupCurrent.groupId,
+        });
+        this.socketChat.emit("group-chat");
+      });
+    },
     call(userId, status, name) {
-      console.log(userId, status);
       if (status == 2) {
         this.dialog = true;
         this.contentDialog = "bạn  đang gọi cho " + name;
         this.callToUser = userId;
-        this.socket.emit("user-call", userId);
+        this.socketCall.emit("user-call", userId);
       } else {
         alert("user offline");
       }
     },
     acceptJoin() {
       this.$router.push(`/call/${this.userCall.roomId}`);
-      this.socket.emit("accept-join", {
+      this.socketCall.emit("accept-join", {
         userHost: this.userCall.id,
         roomId: this.userCall.roomId,
       });
     },
     rejectJoin() {
       this.dialog = false;
-      this.socket.emit("reject-join", this.callToUser);
+      this.socketCall.emit("reject-join", this.callToUser);
     },
     getClassNameWithStatus(status) {
       switch (status) {
@@ -131,6 +271,44 @@ export default {
           return "";
       }
     },
+    getMessageInGroup(groupId, groupName, members = []) {
+      this.groupCurrent = { groupId, groupName, members };
+      this.socketChat.emit("message-in-group", { groupId });
+      const listUser = [...this.listUser];
+      console.log(this.groupCurrent.members);
+      this.userSelectInGroup = listUser.map((item) => {
+        if (
+          !members.includes((member) => {
+            console.log(member._id, item._id);
+            return member._id == item._id;
+          })
+        ) {
+          return item;
+        }
+      });
+    },
+    sendMessage() {
+      if (!this.groupCurrent) {
+        alert("hãy vào một nhóm để chat");
+        return;
+      }
+      if (!this.message) {
+        alert("hãy nhập nội dung để chat");
+        return;
+      }
+      this.socketChat.emit("chat", {
+        groupId: this.groupCurrent.groupId,
+        message: this.message,
+      });
+      this.message = "";
+    },
+    changeMessage() {
+      console.log("change");
+    },
+    submitAddUser() {
+      console.log(this.groupCurrent.members);
+      console.log(this.userSelectInGroup);
+    },
   },
 };
 </script>
@@ -138,6 +316,7 @@ export default {
 .home-page > .content {
   display: flex;
   width: 100%;
+  height: 100vh;
   padding: 50px 50px;
 }
 .home-page > .content > .sidebar {
@@ -147,7 +326,8 @@ export default {
 }
 .home-page > .content > .message {
   width: 75%;
-  background-color: aquamarine;
+  height: 100%;
+  background-color: rgb(219, 219, 219);
 }
 .home-page > .content > .sidebar > .user {
   border-bottom: 2px solid;
@@ -167,5 +347,104 @@ export default {
 }
 .-call {
   background-color: rgba(250, 255, 91, 0.2);
+}
+.chat > .item {
+  cursor: pointer;
+}
+.chat > .item:hover {
+  background-color: aliceblue;
+}
+.chat > .item > .groupName {
+  font-weight: 700;
+  margin: 2px 0;
+}
+.chat > .item > .subMessage {
+  display: flex;
+  margin: 1px 0;
+  font-size: 14px;
+  color: rgb(49, 49, 49);
+  width: 100%;
+}
+.chat > .item > .subMessage > .message {
+  width: 80%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: "----";
+  padding-right: 10px;
+  text-overflow: ellipsis;
+}
+.message,
+.message > .contentMessage {
+  display: flex;
+  height: 95%;
+  width: 100%;
+  overflow-y: auto;
+  flex-direction: column;
+  padding-bottom: 20px;
+}
+
+.message > .header {
+  display: flex;
+  padding: 0 20px;
+  background-color: aliceblue;
+}
+.message > .header > .groupName {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+  padding: 10px 0;
+  width: 70%;
+}
+.message > .header > .groupName > .usersGroup {
+  font-size: 14px;
+  font-weight: 400;
+}
+.message > .header > .action {
+  width: 30%;
+  font-size: 33px;
+  cursor: pointer;
+  text-align: right;
+}
+.material-symbols-outlined {
+  padding: 10px 10px;
+}
+.message > .inputChat {
+  padding: 0 20px;
+}
+.message > .contentMessage > .item {
+  padding: 0 20px;
+}
+.message > .contentMessage > .item > .left {
+  float: left;
+  width: auto;
+  max-width: 45%;
+  display: flex;
+}
+.message > .contentMessage > .item > .left > .user {
+  margin: auto;
+}
+.message > .contentMessage > .item > .left > .content {
+  background-color: rgb(187, 187, 187);
+  border-radius: 5px;
+  padding: 7px 5px;
+  margin: 1px 0;
+}
+
+.message > .contentMessage > .item > .right {
+  float: right;
+  display: flex;
+  width: auto;
+  max-width: 45%;
+}
+.message > .contentMessage > .item > .right > .content {
+  background-color: rgb(0, 85, 255);
+  color: white;
+  border-radius: 5px;
+  padding: 5px;
+  margin: 1px 0;
+}
+.message > .inputChat > .typing {
+  margin: 0;
+  font-size: 14px;
 }
 </style>
