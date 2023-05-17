@@ -7,7 +7,7 @@
             :class="['item', getClassNameWithStatus(item.status)]"
             v-for="(item, index) in listUser"
             :key="index"
-            @click="call(item._id, item.status, item.name)"
+            @click="clickToUser(item._id, item.name)"
           >
             {{ item.name }}
             <span v-if="item._id == currentUser.id">(me)</span>
@@ -21,7 +21,9 @@
             ]"
             v-for="(item, index) in groupChat"
             :key="index"
-            @click="getMessageInGroup(item._id, item.name, item.members)"
+            @click="
+              getMessageInGroup(item._id, item.name, item.members, item.type)
+            "
           >
             <p class="groupName">
               {{ item.name }}
@@ -42,7 +44,7 @@
         <div class="header" v-if="groupCurrent">
           <p class="groupName">
             {{ groupCurrent.groupName }}
-            <span class="usersGroup">
+            <span class="usersGroup" v-if="groupCurrent.type == 2">
               <v-tooltip bottom>
                 <template v-slot:activator="{ on, attrs }">
                   <span v-bind="attrs" v-on="on"
@@ -66,10 +68,13 @@
             <span
               class="material-symbols-outlined"
               @click="() => (dialogGroup = true)"
+              v-if="groupCurrent.type == 2"
             >
               group_add
             </span>
-            <span class="material-symbols-outlined"> videocam </span>
+            <span class="material-symbols-outlined" @click="call">
+              videocam
+            </span>
           </div>
         </div>
         <div class="contentMessage">
@@ -124,8 +129,8 @@
         <v-row align="center">
           <v-col>
             <v-select
-              v-model="userSelectInGroup"
-              :items="listUser"
+              v-model="userAddGroup"
+              :items="userSelectInGroup"
               item-text="name"
               item-value="_id"
               chips
@@ -159,13 +164,13 @@ export default {
         name: "",
         roomId: "",
       },
-      callToUser: "",
       listUser: [],
       socketCall: null,
       socketChat: null,
       currentUser: {},
       groupChat: [],
       userSelectInGroup: [],
+      userAddGroup: [],
       groupCurrent: "",
       chatName: "",
       messageChat: [],
@@ -199,18 +204,19 @@ export default {
         this.listUser = listUser;
       });
       this.socketCall.on("user-call", (userCall, roomId) => {
+        console.log(userCall);
         this.userCall.name = userCall.name;
         this.userCall.id = userCall.id;
         this.userCall.roomId = roomId;
         this.contentDialog = this.userCall.name + " đang gọi cho bạn";
-        this.dialog = true;
+        this.dialogCall = true;
       });
       this.socketCall.on("accept-join", (roomId) => {
         console.log("accept-join");
         this.$router.push(`/call/${roomId}`);
       });
       this.socketCall.on("reject-join", () => {
-        this.dialog = false;
+        this.dialogCall = false;
       });
     },
     handleSocketChat(uri, token) {
@@ -225,6 +231,7 @@ export default {
       });
       this.socketChat.on("group-chat", (groupChat) => {
         this.groupChat = groupChat;
+        console.log(groupChat);
       });
       this.socketChat.on("message-in-group", (messageChat) => {
         this.messageChat = messageChat ? messageChat.messages.reverse() : [];
@@ -238,12 +245,14 @@ export default {
         this.socketChat.emit("group-chat");
       });
     },
-    call(userId, status, name) {
-      if (status == 2) {
-        this.dialog = true;
-        this.contentDialog = "bạn  đang gọi cho " + name;
-        this.callToUser = userId;
-        this.socketCall.emit("user-call", userId);
+    call() {
+      const { groupId } = this.groupCurrent;
+      const user = this.listUser.find((item) => item._id == groupId);
+
+      if (user?.status == 2) {
+        this.dialogCall = true;
+        this.contentDialog = "bạn  đang gọi cho " + user.name;
+        this.socketCall.emit("user-call", user._id);
       } else {
         alert("user offline");
       }
@@ -256,8 +265,8 @@ export default {
       });
     },
     rejectJoin() {
-      this.dialog = false;
-      this.socketCall.emit("reject-join", this.callToUser);
+      this.dialogCall = false;
+      this.socketCall.emit("reject-join", this.groupCurrent.groupId);
     },
     getClassNameWithStatus(status) {
       switch (status) {
@@ -271,21 +280,19 @@ export default {
           return "";
       }
     },
-    getMessageInGroup(groupId, groupName, members = []) {
-      this.groupCurrent = { groupId, groupName, members };
+    getMessageInGroup(groupId, groupName, members = [], type) {
+      this.groupCurrent = { groupId, groupName, members, type };
       this.socketChat.emit("message-in-group", { groupId });
       const listUser = [...this.listUser];
-      console.log(this.groupCurrent.members);
-      this.userSelectInGroup = listUser.map((item) => {
-        if (
-          !members.includes((member) => {
-            console.log(member._id, item._id);
-            return member._id == item._id;
-          })
-        ) {
-          return item;
-        }
-      });
+      this.userSelectInGroup = listUser.filter(
+        (item) => !members.find((member) => member._id == item._id)
+      );
+    },
+    clickToUser(id, name) {
+      if (this.groupCurrent.groupId != id) {
+        this.groupCurrent = { groupId: id, groupName: name };
+        this.messageChat = [];
+      }
     },
     sendMessage() {
       if (!this.groupCurrent) {
@@ -299,11 +306,9 @@ export default {
       this.socketChat.emit("chat", {
         groupId: this.groupCurrent.groupId,
         message: this.message,
+        type: this.groupCurrent.type,
       });
       this.message = "";
-    },
-    changeMessage() {
-      console.log("change");
     },
     submitAddUser() {
       console.log(this.groupCurrent.members);
