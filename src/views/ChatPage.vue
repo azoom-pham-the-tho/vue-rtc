@@ -1,5 +1,5 @@
 <template>
-  <div class="home-page">
+  <div class="chat-page">
     <div class="content">
       <div class="sidebar">
         <div class="user">
@@ -22,19 +22,20 @@
             v-for="(item, index) in groupChat"
             :key="index"
             @click="
-              getMessageInGroup(item._id, item.name, item.members, item.type)
+              getMessageInGroup(item._id, item.name, item.type, item.members)
             "
+            @dblclick="deleteGroup(item._id, item.name)"
           >
             <p class="groupName">
-              {{ item.name }}
+              {{ item?.name }}
             </p>
             <div class="subMessage">
               <span>
-                {{ item.messages[0].name }}
+                {{ item.messages[0]?.name }}
               </span>
               : &nbsp;
               <span class="message">
-                {{ item.messages[0].content }}
+                {{ item.messages[0]?.content }}
               </span>
             </div>
           </div>
@@ -83,7 +84,7 @@
               <p class="user" v-if="item.userId != currentUser.id">
                 {{ item.name }} &nbsp;
               </p>
-              <p class="content">{{ item.content }}</p>
+              <p class="content">{{ item?.content }}</p>
             </div>
           </div>
         </div>
@@ -151,7 +152,7 @@
   </div>
 </template>
 <script>
-import io from "socket.io-client";
+import { Manager } from "socket.io-client";
 export default {
   data() {
     return {
@@ -179,21 +180,23 @@ export default {
   },
 
   mounted() {
-    const uri = "http://localhost:8001";
+    const uri = "http://94.237.79.161:8001/";
     const token = sessionStorage.getItem("auth");
     this.currentUser = JSON.parse(sessionStorage.getItem("user"));
+
+    const manager = new Manager(uri, {
+      extraHeaders: {
+        authorization: `Beaer ${token}`,
+      },
+    });
+    this.socketCall = manager.socket("/call", { forceNew: true });
+    this.socketChat = manager.socket("/chat", { forceNew: true });
     if (!token) return this.$router.push("login");
-    this.handleSocketCall(uri, token);
-    this.handleSocketChat(uri, token);
+    this.handleSocketCall();
+    this.handleSocketChat();
   },
   methods: {
-    handleSocketCall(uri, token) {
-      this.socketCall = io(uri, {
-        path: "/call",
-        extraHeaders: {
-          authorization: `Beaer ${token}`,
-        },
-      });
+    handleSocketCall() {
       this.socketCall.on("connect", () => {
         this.socketCall.emit("get-all-user");
         this.socketCall.on("disconnect", () => {
@@ -205,10 +208,10 @@ export default {
       });
       this.socketCall.on("user-call", (userCall, roomId) => {
         console.log(userCall);
-        this.userCall.name = userCall.name;
+        this.userCall.name = userCall?.name;
         this.userCall.id = userCall.id;
         this.userCall.roomId = roomId;
-        this.contentDialog = this.userCall.name + " đang gọi cho bạn";
+        this.contentDialog = this.userCall?.name + " đang gọi cho bạn";
         this.dialogCall = true;
       });
       this.socketCall.on("accept-join", (roomId) => {
@@ -219,19 +222,12 @@ export default {
         this.dialogCall = false;
       });
     },
-    handleSocketChat(uri, token) {
-      this.socketChat = io(uri, {
-        path: "/chat",
-        extraHeaders: {
-          authorization: `Beaer ${token}`,
-        },
-      });
+    handleSocketChat() {
       this.socketCall.on("connect", () => {
         this.socketChat.emit("group-chat");
       });
       this.socketChat.on("group-chat", (groupChat) => {
         this.groupChat = groupChat;
-        console.log(groupChat);
       });
       this.socketChat.on("message-in-group", (messageChat) => {
         this.messageChat = messageChat ? messageChat.messages.reverse() : [];
@@ -244,9 +240,19 @@ export default {
         });
         this.socketChat.emit("group-chat");
       });
+      this.socketChat.on("group-chat-user-to-user", (groupId) => {
+        if (groupId) {
+          this.groupCurrent.groupId = groupId;
+          this.socketChat.emit("message-in-group", { groupId });
+        }
+      });
+      this.socketChat.on("delete-group", () => {
+        this.socketChat.emit("group-chat");
+      });
     },
     call() {
       const { groupId } = this.groupCurrent;
+      console.log(this.groupCurrent);
       const user = this.listUser.find((item) => item._id == groupId);
 
       if (user?.status == 2) {
@@ -280,18 +286,20 @@ export default {
           return "";
       }
     },
-    getMessageInGroup(groupId, groupName, members = [], type) {
+    getMessageInGroup(groupId, groupName, type, members = []) {
       this.groupCurrent = { groupId, groupName, members, type };
       this.socketChat.emit("message-in-group", { groupId });
       const listUser = [...this.listUser];
-      this.userSelectInGroup = listUser.filter(
-        (item) => !members.find((member) => member._id == item._id)
+      this.userSelectInGroup = listUser?.filter(
+        (item) => !members?.find((member) => member._id == item._id)
       );
     },
     clickToUser(id, name) {
-      if (this.groupCurrent.groupId != id) {
-        this.groupCurrent = { groupId: id, groupName: name };
+      if (this.currentUser.id != id) {
+        console.log(id);
+        this.groupCurrent = { groupId: id, groupName: name, type: 1 };
         this.messageChat = [];
+        this.socketChat.emit("group-chat-user-to-user", id);
       }
     },
     sendMessage() {
@@ -314,33 +322,38 @@ export default {
       console.log(this.groupCurrent.members);
       console.log(this.userSelectInGroup);
     },
+    deleteGroup(groupId, groupName) {
+      if (confirm("Bạn muốn xoá " + groupName + " ?")) {
+        this.socketChat.emit("delete-group", groupId);
+      }
+    },
   },
 };
 </script>
 <style scoped>
-.home-page > .content {
+.chat-page > .content {
   display: flex;
   width: 100%;
   height: 100vh;
   padding: 50px 50px;
 }
-.home-page > .content > .sidebar {
+.chat-page > .content > .sidebar {
   width: 25%;
   display: flex;
   flex-direction: column;
 }
-.home-page > .content > .message {
+.chat-page > .content > .message {
   width: 75%;
   height: 100%;
   background-color: rgb(219, 219, 219);
 }
-.home-page > .content > .sidebar > .user {
+.chat-page > .content > .sidebar > .user {
   border-bottom: 2px solid;
   border-top: 2px solid;
   max-height: 200px;
   overflow-y: scroll;
 }
-.home-page > .content > .sidebar > .user > .item {
+.chat-page > .content > .sidebar > .user > .item {
   padding: 5px 5px;
   cursor: pointer;
 }

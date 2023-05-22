@@ -2,7 +2,7 @@ import axios from "axios";
 
 // Set config defaults when creating the instance
 const AxiosClient = axios.create({
-  baseURL: "http://localhost:8001",
+  baseURL: "http://94.237.79.161:8001",
 });
 // Add a request interceptor
 AxiosClient.interceptors.request.use(

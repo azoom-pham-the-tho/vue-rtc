@@ -92,7 +92,7 @@ export default {
   },
   mounted() {
     this.roomId = this.$route.params.id;
-    const uri = "http://localhost:8001";
+    const uri = "http://94.237.79.161:8001";
     const token = sessionStorage.getItem("auth");
     if (!token) return this.$router.push("login");
     this.socket = io(uri, {

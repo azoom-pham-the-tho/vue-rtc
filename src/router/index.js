@@ -1,16 +1,17 @@
 import Vue from "vue";
 import VueRouter from "vue-router";
-import HomeView from "../views/HomeView.vue";
+import ChatPage from "../views/ChatPage.vue";
 import UserCall from "../views/UserCall.vue";
+import liveStream from "../views/LivePage.vue";
 import LoginPage from "../views/LoginPage.vue";
 import RegisterPage from "../views/RegisterPage.vue";
 Vue.use(VueRouter);
 
 const routes = [
   {
-    path: "/",
-    name: "home",
-    component: HomeView,
+    path: "/chat",
+    name: "chat",
+    component: ChatPage,
   },
   {
     path: "/login",
@@ -26,6 +27,11 @@ const routes = [
     path: "/call/:id",
     name: "userCall",
     component: UserCall,
+  },
+  {
+    path: "/live",
+    name: "liveStream",
+    component: liveStream,
   },
 ];
 
