@@ -2,6 +2,7 @@ import Vue from "vue";
 import VueRouter from "vue-router";
 import ChatPage from "../views/ChatPage.vue";
 import UserCall from "../views/UserCall.vue";
+import GroupCall from "../views/GroupCall.vue";
 import liveStream from "../views/LivePage.vue";
 import LoginPage from "../views/LoginPage.vue";
 import RegisterPage from "../views/RegisterPage.vue";
@@ -32,6 +33,11 @@ const routes = [
     path: "/live",
     name: "liveStream",
     component: liveStream,
+  },
+  {
+    path: "/group/:id",
+    name: "GroupCall",
+    component: GroupCall,
   },
 ];
 
