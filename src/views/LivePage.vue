@@ -167,10 +167,10 @@ export default {
 .live-page > .content {
   display: flex;
   justify-content: flex-start;
-  padding: 0 50px;
+  padding: 0 75px;
 }
 .live-page > .content > .v-card {
-  width: 300px;
+  width: 295px;
   height: 250px;
   margin: 10px 10px;
 }
@@ -187,5 +187,8 @@ export default {
 .live-page > .content > .v-card > .v-card__text {
   height: 115px;
   overflow-y: scroll;
+}
+.live-page > .pagination > .text-center {
+  width: 100%;
 }
 </style>
