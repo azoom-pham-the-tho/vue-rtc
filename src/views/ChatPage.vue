@@ -180,7 +180,7 @@ export default {
   },
 
   mounted() {
-    const uri = process.env.DOMAIN_BE;
+    const uri = "http://94.237.79.161:8001";
     const token = sessionStorage.getItem("auth");
     this.currentUser = JSON.parse(sessionStorage.getItem("user"));
 

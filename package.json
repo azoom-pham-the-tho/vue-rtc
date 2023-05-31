@@ -3,9 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "serve": "PORT=80 vue-cli-service serve",
+    "serve": "PORT=8080 vue-cli-service serve",
     "build": "vue-cli-service build",
-    "lint": "vue-cli-service lint"
+    "lint": "vue-cli-service lint",
+    "d-build":"docker-compose build ",
+    "watch": "docker-compose up",
+    "up": "docker-compose up -d",
+    "down": "docker-compose down",
+    "restart": "docker-compose restart"
   },
   "dependencies": {
     "axios": "^0.26.1",
